@@ -14,12 +14,20 @@ OUTPUT_PATH = "/output/entry.txt"
 
 def check_entry(text):
     """Guard the bounty gate: 1-200 UTF-8 chars, one line, not blank."""
+    if not isinstance(text, str):
+        raise TypeError(f"entry must be str, got {type(text).__name__}")
     if not 1 <= len(text) <= 200:
         raise ValueError(f"entry must be 1-200 characters, got {len(text)}")
     if not text.strip():
         raise ValueError("entry must not be only whitespace")
     if "\n" in text or "\r" in text:
         raise ValueError("entry must be a single line")
+    # Fail here, before any file is touched, if the text cannot be
+    # represented as UTF-8 (e.g. lone surrogates from a bad edit).
+    try:
+        text.encode("utf-8", errors="strict")
+    except UnicodeEncodeError as exc:
+        raise ValueError("entry must be encodable as UTF-8") from exc
 
 
 def write_entry():
@@ -28,13 +36,14 @@ def write_entry():
     os.makedirs(directory, exist_ok=True)
     with open(OUTPUT_PATH, "w", encoding="utf-8", newline="") as handle:
         handle.write(ENTRY_TEXT)
-    # Read back so a truncated or corrupted write fails loudly here,
-    # rather than silently producing an invalid entry for the judge.
-    with open(OUTPUT_PATH, encoding="utf-8") as handle:
-        written = handle.read()
-    if written != ENTRY_TEXT:
-        raise ValueError("written entry does not match ENTRY_TEXT")
-    check_entry(written)
+    # Read back as raw bytes so a truncated or corrupted write, or a
+    # stray trailing newline, fails loudly here rather than silently
+    # producing an invalid entry for the judge.
+    with open(OUTPUT_PATH, "rb") as handle:
+        written_bytes = handle.read()
+    if written_bytes != ENTRY_TEXT.encode("utf-8"):
+        raise ValueError("written entry does not match ENTRY_TEXT bytes")
+    check_entry(written_bytes.decode("utf-8"))
 
 
 if __name__ == "__main__":
